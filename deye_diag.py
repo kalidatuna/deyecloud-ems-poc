@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Small DeyeCloud OpenAPI diagnostic client for a paid EMS PoC.
+
+The tool is intentionally conservative: discovery/telemetry calls are read-only,
+and arbitrary control calls are dry-run unless --execute is supplied explicitly.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Callable
+
+
+JsonDict = dict[str, Any]
+PostFn = Callable[[str, JsonDict, dict[str, str]], JsonDict]
+
+
+def sha256_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest().lower()
+
+
+def login_field(login: str) -> JsonDict:
+    login = login.strip()
+    if not login:
+        raise ValueError("login cannot be empty")
+    return {"email": login} if "@" in login else {"username": login}
+
+
+def http_post_json(url: str, payload: JsonDict, headers: dict[str, str]) -> JsonDict:
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request_headers = {"Content-Type": "application/json", **headers}
+    req = urllib.request.Request(url, data=body, headers=request_headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"network error calling {url}: {exc.reason}") from exc
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"non-JSON response from {url}: {raw[:500]}") from exc
+
+
+@dataclass
+class DeyeCloudClient:
+    base_url: str
+    app_id: str
+    app_secret: str
+    login: str
+    password: str
+    company_id: str | None = None
+    post: PostFn = http_post_json
+    token: str | None = None
+
+    def _url(self, path: str) -> str:
+        return f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
+
+    def _auth_headers(self) -> dict[str, str]:
+        if not self.token:
+            raise RuntimeError("authenticate() must be called first")
+        return {"Authorization": f"Bearer {self.token}"}
+
+    def authenticate(self) -> str:
+        payload: JsonDict = {
+            "appSecret": self.app_secret,
+            **login_field(self.login),
+            "password": sha256_password(self.password),
+        }
+        if self.company_id:
+            payload["companyId"] = self.company_id.strip()
+        result = self.post(
+            self._url(f"account/token?appId={self.app_id}"), payload, {}
+        )
+        if not result.get("success") or not result.get("accessToken"):
+            raise RuntimeError(f"DeyeCloud token request failed: {result.get('msg', result)}")
+        self.token = str(result["accessToken"])
+        return self.token
+
+    def stations(self) -> list[JsonDict]:
+        result = self.post(self._url("station/list"), {}, self._auth_headers())
+        if result.get("success") is False:
+            raise RuntimeError(f"station list failed: {result.get('msg', result)}")
+        return list(result.get("stationList") or [])
+
+    def devices(self, station_ids: list[Any], page_size: int = 100) -> list[JsonDict]:
+        if not station_ids:
+            return []
+        page = 1
+        devices: list[JsonDict] = []
+        while True:
+            result = self.post(
+                self._url("station/device"),
+                {"page": page, "size": page_size, "stationIds": station_ids},
+                self._auth_headers(),
+            )
+            if result.get("success") is False:
+                raise RuntimeError(f"device discovery failed: {result.get('msg', result)}")
+            items = list(result.get("deviceListItems") or [])
+            devices.extend(items)
+            total = result.get("total") or result.get("totalCount")
+            if (total is not None and len(devices) >= int(total)) or len(items) < page_size:
+                break
+            page += 1
+        return devices
+
+    def station_latest(self, station_id: Any) -> JsonDict:
+        result = self.post(
+            self._url("station/latest"), {"stationId": station_id}, self._auth_headers()
+        )
+        if result.get("success") is False:
+            raise RuntimeError(f"station telemetry failed: {result.get('msg', result)}")
+        return result
+
+    def control(
+        self,
+        path: str,
+        payload: JsonDict,
+        *,
+        execute: bool = False,
+    ) -> JsonDict:
+        """Validate or execute one buyer-specified Dynamic Control call.
+
+        We do not guess write payload schemas. The paid buyer can supply the
+        documented path/payload, this method shows exactly what will be sent,
+        and --execute is required to make a live write.
+        """
+        if not path.startswith("order/"):
+            raise ValueError("control path must start with 'order/'")
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("control payload must be a non-empty JSON object")
+        preview = {"path": path, "payload": payload, "execute": execute}
+        if not execute:
+            return {"dry_run": True, **preview}
+        result = self.post(self._url(path), payload, self._auth_headers())
+        return {"dry_run": False, "request": preview, "response": result}
+
+
+def station_id(station: JsonDict) -> Any:
+    return station.get("id") or station.get("stationId")
+
+
+def redact(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        hidden = {"accesstoken", "appsecret", "password", "token", "authorization"}
+        return {
+            k: ("***" if k.lower() in hidden else redact(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [redact(v) for v in obj]
+    return obj
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="DeyeCloud EMS PoC diagnostic client")
+    p.add_argument("--base-url", default=os.getenv("DEYE_BASE_URL", "https://eu1-developer.deyecloud.com/v1.0"))
+    p.add_argument("--app-id", default=os.getenv("DEYE_APP_ID"))
+    p.add_argument("--app-secret", default=os.getenv("DEYE_APP_SECRET"))
+    p.add_argument("--login", default=os.getenv("DEYE_LOGIN"))
+    p.add_argument("--password", default=os.getenv("DEYE_PASSWORD"))
+    p.add_argument("--company-id", default=os.getenv("DEYE_COMPANY_ID"))
+    p.add_argument("--control-path", help="Buyer-provided Dynamic Control path, e.g. order/.../update")
+    p.add_argument("--payload-json", help="Buyer-provided JSON payload for --control-path")
+    p.add_argument("--execute", action="store_true", help="Actually send the control write. Default is dry-run.")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    missing = [
+        name
+        for name, value in {
+            "DEYE_APP_ID/--app-id": args.app_id,
+            "DEYE_APP_SECRET/--app-secret": args.app_secret,
+            "DEYE_LOGIN/--login": args.login,
+            "DEYE_PASSWORD/--password": args.password,
+        }.items()
+        if not value
+    ]
+    if missing:
+        print("Missing required credentials: " + ", ".join(missing), file=sys.stderr)
+        return 2
+
+    client = DeyeCloudClient(
+        base_url=args.base_url,
+        app_id=args.app_id,
+        app_secret=args.app_secret,
+        login=args.login,
+        password=args.password,
+        company_id=args.company_id,
+    )
+    client.authenticate()
+    stations = client.stations()
+    ids = [sid for s in stations if (sid := station_id(s)) is not None]
+    devices = client.devices(ids)
+    telemetry = [client.station_latest(sid) for sid in ids]
+
+    report: JsonDict = {
+        "auth": "ok",
+        "station_count": len(stations),
+        "station_ids": ids,
+        "device_count": len(devices),
+        "devices": devices,
+        "telemetry": telemetry,
+    }
+
+    if args.control_path:
+        if not args.payload_json:
+            print("--control-path requires --payload-json", file=sys.stderr)
+            return 2
+        try:
+            payload = json.loads(args.payload_json)
+        except json.JSONDecodeError as exc:
+            print(f"invalid --payload-json: {exc}", file=sys.stderr)
+            return 2
+        report["control"] = client.control(
+            args.control_path, payload, execute=args.execute
+        )
+
+    print(json.dumps(redact(report), indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
