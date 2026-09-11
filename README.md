@@ -8,9 +8,12 @@ It reuses the API contract already exercised by the public `hass-deyecloud` inte
 - `/station/list` station discovery;
 - `/station/device` device discovery;
 - `/station/latest` telemetry;
-- bearer-authenticated `order/...` control requests.
+- `/config/tou` readback of the inverter's time-of-use program;
+- official `/strategy/dynamicControl` write requests;
+- `/order/{orderId}` command-result polling;
+- selected bearer-authenticated `order/...` control requests.
 
-The existing integration already contains a working write endpoint at `order/sys/solarSell/control`. Public discussion in the same project also shows users operating Dynamic Control endpoints such as `order/battery/parameter/update`, `order/sys/power/update`, and `order/sys/workMode/update`.
+The exact Dynamic Control endpoint is no longer guessed. Deye's own public sample repository contains four worked examples using `POST /strategy/dynamicControl`, including full charge, self-consumption, idle and feed-in-grid modes. The same public API ecosystem documents asynchronous order acknowledgement via an `orderId`, which can be checked at `GET /order/{orderId}`.
 
 ## Safety boundary
 
@@ -24,7 +27,7 @@ That is deliberate: the buyer said they already have a detailed technical specif
 python3 -m unittest -v test_deye_diag.py
 ```
 
-The tests use a fake HTTP transport and cover authentication payloads, discovery, telemetry, dry-run control, explicit live-control gating, and invalid write-path rejection.
+The tests use a fake HTTP transport and cover authentication payloads, discovery, telemetry, TOU readback, reviewed write-path allowlisting, Dynamic Control validation, dry-run behavior, explicit live-control gating and order-result polling.
 
 ## Live PoC flow after buyer acceptance
 
@@ -36,14 +39,15 @@ export DEYE_PASSWORD='...'
 
 python3 deye_diag.py
 
-# Validate the exact write packet without sending it:
+# Validate the official Dynamic Control packet without sending it:
 python3 deye_diag.py \
-  --control-path order/sys/workMode/update \
-  --payload-json '{"deviceSn":"...","workMode":"SELLING_FIRST"}'
+  --dynamic-control-json '{"deviceSn":"...","workMode":"ZERO_EXPORT_TO_CT","gridChargeAction":"on","touAction":"on","touDays":["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"],"timeUseSettingItems":[{"enableGeneration":false,"enableGridCharge":true,"power":4000,"soc":80,"time":"00:10"}]}'
 
 # Only after the buyer approves a test device and exact payload:
 python3 deye_diag.py \
-  --control-path order/sys/workMode/update \
-  --payload-json '{"deviceSn":"...","workMode":"SELLING_FIRST"}' \
+  --dynamic-control-json '{"deviceSn":"...","workMode":"ZERO_EXPORT_TO_CT","gridChargeAction":"on","touAction":"on","touDays":["SUNDAY","MONDAY","TUESDAY","WEDNESDAY","THURSDAY","FRIDAY","SATURDAY"],"timeUseSettingItems":[{"enableGeneration":false,"enableGridCharge":true,"power":4000,"soc":80,"time":"00:10"}]}' \
   --execute
+
+# Poll the returned order ID:
+python3 deye_diag.py --poll-order-id ORDER_ID
 ```

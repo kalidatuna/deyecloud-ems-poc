@@ -20,6 +20,7 @@ from typing import Any, Callable
 
 JsonDict = dict[str, Any]
 PostFn = Callable[[str, JsonDict, dict[str, str]], JsonDict]
+GetFn = Callable[[str, dict[str, str]], JsonDict]
 
 
 def sha256_password(password: str) -> str:
@@ -52,6 +53,23 @@ def http_post_json(url: str, payload: JsonDict, headers: dict[str, str]) -> Json
         raise RuntimeError(f"non-JSON response from {url}: {raw[:500]}") from exc
 
 
+def http_get_json(url: str, headers: dict[str, str]) -> JsonDict:
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"network error calling {url}: {exc.reason}") from exc
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"non-JSON response from {url}: {raw[:500]}") from exc
+
+
 @dataclass
 class DeyeCloudClient:
     base_url: str
@@ -61,6 +79,7 @@ class DeyeCloudClient:
     password: str
     company_id: str | None = None
     post: PostFn = http_post_json
+    get: GetFn = http_get_json
     token: str | None = None
 
     def _url(self, path: str) -> str:
@@ -122,6 +141,61 @@ class DeyeCloudClient:
             raise RuntimeError(f"station telemetry failed: {result.get('msg', result)}")
         return result
 
+    def tou_config(self, device_sn: str) -> JsonDict:
+        result = self.post(
+            self._url("config/tou"),
+            {"deviceSn": device_sn},
+            self._auth_headers(),
+        )
+        if result.get("success") is False:
+            raise RuntimeError(f"TOU config read failed: {result.get('msg', result)}")
+        return result
+
+    @staticmethod
+    def validate_dynamic_payload(payload: JsonDict) -> None:
+        """Validate the documented minimum shape of /strategy/dynamicControl."""
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("dynamic-control payload must be a non-empty JSON object")
+        if not payload.get("deviceSn"):
+            raise ValueError("dynamic-control payload requires deviceSn")
+        if not payload.get("workMode"):
+            raise ValueError("dynamic-control payload requires workMode")
+        slots = payload.get("timeUseSettingItems")
+        if not isinstance(slots, list) or not slots:
+            raise ValueError("dynamic-control payload requires timeUseSettingItems")
+        for i, slot in enumerate(slots):
+            if not isinstance(slot, dict):
+                raise ValueError(f"timeUseSettingItems[{i}] must be an object")
+            for field in ("time", "power", "soc"):
+                if field not in slot:
+                    raise ValueError(f"timeUseSettingItems[{i}] missing {field}")
+
+    def dynamic_control(self, payload: JsonDict, *, execute: bool = False) -> JsonDict:
+        """Preview or send Deye's documented Dynamic Control request.
+
+        Official Deye sample code uses POST /strategy/dynamicControl. Writes remain
+        opt-in so this can be safely reviewed before touching a buyer's inverter.
+        """
+        self.validate_dynamic_payload(payload)
+        preview = {
+            "path": "strategy/dynamicControl",
+            "payload": payload,
+            "execute": execute,
+        }
+        if not execute:
+            return {"dry_run": True, **preview}
+        result = self.post(
+            self._url("strategy/dynamicControl"), payload, self._auth_headers()
+        )
+        return {"dry_run": False, "request": preview, "response": result}
+
+    def order_status(self, order_id: str) -> JsonDict:
+        """Read one Dynamic Control order result via GET /order/{orderId}."""
+        order_id = str(order_id).strip()
+        if not order_id:
+            raise ValueError("order_id cannot be empty")
+        return self.get(self._url(f"order/{order_id}"), self._auth_headers())
+
     def control(
         self,
         path: str,
@@ -135,8 +209,14 @@ class DeyeCloudClient:
         documented path/payload, this method shows exactly what will be sent,
         and --execute is required to make a live write.
         """
-        if not path.startswith("order/"):
-            raise ValueError("control path must start with 'order/'")
+        allowed = {
+            "order/sys/tou/update",
+            "order/sys/solarSell/control",
+            "strategy/dynamicControl",
+        }
+        path = path.lstrip("/")
+        if path not in allowed:
+            raise ValueError(f"control path is not in the reviewed allowlist: {path}")
         if not isinstance(payload, dict) or not payload:
             raise ValueError("control payload must be a non-empty JSON object")
         preview = {"path": path, "payload": payload, "execute": execute}
@@ -172,6 +252,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--company-id", default=os.getenv("DEYE_COMPANY_ID"))
     p.add_argument("--control-path", help="Buyer-provided Dynamic Control path, e.g. order/.../update")
     p.add_argument("--payload-json", help="Buyer-provided JSON payload for --control-path")
+    p.add_argument(
+        "--dynamic-control-json",
+        help="JSON payload for the official /strategy/dynamicControl endpoint",
+    )
+    p.add_argument("--poll-order-id", help="Read status for an existing Dynamic Control order ID")
     p.add_argument("--execute", action="store_true", help="Actually send the control write. Default is dry-run.")
     return p
 
@@ -227,6 +312,22 @@ def main(argv: list[str] | None = None) -> int:
         report["control"] = client.control(
             args.control_path, payload, execute=args.execute
         )
+
+    if args.dynamic_control_json:
+        try:
+            payload = json.loads(args.dynamic_control_json)
+        except json.JSONDecodeError as exc:
+            print(f"invalid --dynamic-control-json: {exc}", file=sys.stderr)
+            return 2
+        report["dynamic_control"] = client.dynamic_control(
+            payload, execute=args.execute
+        )
+        response = report["dynamic_control"].get("response") or {}
+        if args.execute and response.get("orderId"):
+            report["dynamic_control"]["order_id"] = response["orderId"]
+
+    if args.poll_order_id:
+        report["order_status"] = client.order_status(args.poll_order_id)
 
     print(json.dumps(redact(report), indent=2, ensure_ascii=False))
     return 0
