@@ -1,5 +1,7 @@
 # DeyeCloud EMS diagnostic PoC
 
+[![CI](https://github.com/kalidatuna/deyecloud-ems-poc/actions/workflows/ci.yml/badge.svg)](https://github.com/kalidatuna/deyecloud-ems-poc/actions/workflows/ci.yml)
+
 A Python diagnostic client for DeyeCloud station discovery, device discovery, telemetry, and opt-in control requests. This is a proof of concept, not a complete energy-management scheduler or a device-validated production integration.
 
 ## Run the offline tests
