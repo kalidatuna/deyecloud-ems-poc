@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import Mock
 
-from deye_diag import DeyeCloudClient, login_field, sha256_password
+from deye_diag import DeyeCloudClient, login_field, sha256_password, station_id, redact
 
 
 class FakeTransport:
@@ -148,6 +149,50 @@ class DeyeDiagTests(unittest.TestCase):
         client, _ = self.make_client()
         with self.assertRaisesRegex(ValueError, "deviceSn"):
             client.dynamic_control({"workMode": "ZERO_EXPORT_TO_CT", "timeUseSettingItems": [{}]})
+
+    def test_invalid_page_size_rejected_before_transport(self):
+        client, fake = self.make_client()
+        for value in (0, -1, True, 1.5, "100", None):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "positive integer"):
+                client.devices([101], page_size=value)
+        self.assertEqual(fake.calls, [])
+
+    def test_empty_station_list_does_not_call_transport(self):
+        client, fake = self.make_client()
+        self.assertEqual(client.devices([]), [])
+        self.assertEqual(fake.calls, [])
+
+    def test_device_pagination_with_and_without_total(self):
+        for total_field in (None, "total", "totalCount"):
+            with self.subTest(total_field=total_field):
+                client, _ = self.make_client()
+                client.token = "test-token"
+                pages = [{"deviceListItems": [{"deviceSn": "A"}, {"deviceSn": "B"}]},
+                         {"deviceListItems": [{"deviceSn": "C"}]}]
+                if total_field:
+                    for page in pages:
+                        page[total_field] = 3
+                client.post = Mock(side_effect=pages)
+                self.assertEqual([d["deviceSn"] for d in client.devices([101], 2)], ["A", "B", "C"])
+                self.assertEqual([call.args[1]["page"] for call in client.post.call_args_list], [1, 2])
+
+    def test_pagination_stops_on_exact_total(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        client.post = Mock(return_value={"deviceListItems": [{"deviceSn": "A"}], "total": 1})
+        self.assertEqual(len(client.devices([101], 1)), 1)
+        client.post.assert_called_once()
+
+    def test_station_id_preserves_zero_and_falls_back_for_none(self):
+        self.assertEqual(station_id({"id": 0, "stationId": 101}), 0)
+        self.assertEqual(station_id({"id": None, "stationId": 101}), 101)
+        self.assertEqual(station_id({"stationId": 101}), 101)
+        self.assertIsNone(station_id({}))
+
+    def test_redaction_is_recursive_and_does_not_mutate_report(self):
+        report = {"nested": [{"AccessToken": "secret", "deviceSn": "test"}], "password": "pw"}
+        self.assertEqual(redact(report), {"nested": [{"AccessToken": "***", "deviceSn": "test"}], "password": "***"})
+        self.assertEqual(report["nested"][0]["AccessToken"], "secret")
 
     def test_login_field_supports_username_and_email(self):
         self.assertEqual(login_field("a@b.com"), {"email": "a@b.com"})

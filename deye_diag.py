@@ -113,6 +113,8 @@ class DeyeCloudClient:
         return list(result.get("stationList") or [])
 
     def devices(self, station_ids: list[Any], page_size: int = 100) -> list[JsonDict]:
+        if isinstance(page_size, bool) or not isinstance(page_size, int) or page_size < 1:
+            raise ValueError("page_size must be a positive integer")
         if not station_ids:
             return []
         page = 1
@@ -227,7 +229,8 @@ class DeyeCloudClient:
 
 
 def station_id(station: JsonDict) -> Any:
-    return station.get("id") or station.get("stationId")
+    value = station.get("id")
+    return value if value is not None else station.get("stationId")
 
 
 def redact(obj: Any) -> Any:
