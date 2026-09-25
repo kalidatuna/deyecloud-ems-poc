@@ -14,6 +14,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -81,6 +82,12 @@ class DeyeCloudClient:
     post: PostFn = http_post_json
     get: GetFn = http_get_json
     token: str | None = None
+
+    def __post_init__(self) -> None:
+        parsed = urlsplit(self.base_url)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment):
+            raise ValueError("base_url must be a plain HTTPS URL with a hostname")
 
     def _url(self, path: str) -> str:
         return f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"

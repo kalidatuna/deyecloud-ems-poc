@@ -65,6 +65,11 @@ class DeyeDiagTests(unittest.TestCase):
         )
         return client, fake
 
+    def test_credentials_cannot_be_sent_to_insecure_base_url(self):
+        for url in ("http://example.com/v1.0", "https://user:pass@example.com/v1.0", "https://example.com/?token=abc", "not-a-url"):
+            with self.subTest(url=url), self.assertRaisesRegex(ValueError, "HTTPS"):
+                DeyeCloudClient(url, "app", "secret", "alice", "pw")
+
     def test_auth_payload_matches_existing_integration_contract(self):
         client, fake = self.make_client()
         token = client.authenticate()
