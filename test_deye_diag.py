@@ -1,9 +1,10 @@
 import contextlib
 import io
 import unittest
+import urllib.error
 from unittest.mock import Mock, patch
 
-from deye_diag import DeyeCloudClient, login_field, main, sha256_password, station_id, redact
+from deye_diag import DeyeCloudClient, http_get_json, http_post_json, login_field, main, sha256_password, station_id, redact
 
 
 class FakeTransport:
@@ -40,6 +41,17 @@ class FakeTransport:
 
 
 class DeyeDiagTests(unittest.TestCase):
+    @patch("deye_diag.urllib.request.urlopen")
+    def test_http_error_does_not_echo_sensitive_response_body(self, urlopen):
+        urlopen.side_effect = urllib.error.HTTPError(
+            "https://example.com", 400, "Bad Request", {}, io.BytesIO(b"password=private-secret")
+        )
+        for call in (lambda: http_get_json("https://example.com", {}),
+                     lambda: http_post_json("https://example.com", {}, {})):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 400") as error:
+                call()
+            self.assertNotIn("private-secret", str(error.exception))
+
     @patch.object(DeyeCloudClient, "authenticate")
     def test_invalid_cli_control_payload_never_authenticates(self, authenticate):
         credentials = ["--app-id", "app", "--app-secret", "secret", "--login", "alice", "--password", "pw"]

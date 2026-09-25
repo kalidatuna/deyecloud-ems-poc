@@ -43,15 +43,14 @@ def http_post_json(url: str, payload: JsonDict, headers: dict[str, str]) -> Json
         with urllib.request.urlopen(req, timeout=15) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail[:500]}") from exc
+        raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"network error calling {url}: {exc.reason}") from exc
 
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"non-JSON response from {url}: {raw[:500]}") from exc
+        raise RuntimeError(f"non-JSON response from {url}") from exc
 
 
 def http_get_json(url: str, headers: dict[str, str]) -> JsonDict:
@@ -60,15 +59,14 @@ def http_get_json(url: str, headers: dict[str, str]) -> JsonDict:
         with urllib.request.urlopen(req, timeout=15) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} from {url}: {detail[:500]}") from exc
+        raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"network error calling {url}: {exc.reason}") from exc
 
     try:
         return json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"non-JSON response from {url}: {raw[:500]}") from exc
+        raise RuntimeError(f"non-JSON response from {url}") from exc
 
 
 @dataclass
