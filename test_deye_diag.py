@@ -211,6 +211,17 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertEqual(len(client.devices([101], 1)), 1)
         client.post.assert_called_once()
 
+    def test_invalid_device_pages_are_reported(self):
+        for page in ({"deviceListItems": {"deviceSn": "A"}},
+                     {"deviceListItems": ["A"]},
+                     {"deviceListItems": [{"deviceSn": "A"}], "total": "unknown"}):
+            with self.subTest(page=page):
+                client, _ = self.make_client()
+                client.token = "test-token"
+                client.post = Mock(return_value=page)
+                with self.assertRaisesRegex(RuntimeError, "invalid"):
+                    client.devices([101], 1)
+
     def test_station_id_preserves_zero_and_falls_back_for_none(self):
         self.assertEqual(station_id({"id": 0, "stationId": 101}), 0)
         self.assertEqual(station_id({"id": None, "stationId": 101}), 101)

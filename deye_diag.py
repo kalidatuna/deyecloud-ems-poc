@@ -134,9 +134,15 @@ class DeyeCloudClient:
             )
             if result.get("success") is False:
                 raise RuntimeError(f"device discovery failed: {result.get('msg', result)}")
-            items = list(result.get("deviceListItems") or [])
+            items = result.get("deviceListItems") or []
+            if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+                raise RuntimeError("device discovery returned an invalid deviceListItems list")
             devices.extend(items)
-            total = result.get("total") or result.get("totalCount")
+            total = result.get("total")
+            if total is None:
+                total = result.get("totalCount")
+            if total is not None and (isinstance(total, bool) or not str(total).isdigit()):
+                raise RuntimeError("device discovery returned an invalid total")
             if (total is not None and len(devices) >= int(total)) or len(items) < page_size:
                 break
             page += 1
