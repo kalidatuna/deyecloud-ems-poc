@@ -78,6 +78,15 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertEqual(payload["email"], "buyer@example.com")
         self.assertEqual(payload["password"], sha256_password("pw"))
 
+    def test_url_components_are_encoded(self):
+        client, fake = self.make_client()
+        client.app_id = "app&other=1"
+        client.authenticate()
+        self.assertIn("appId=app%26other%3D1", fake.calls[0][1])
+        client.get = Mock(return_value={"success": True})
+        client.order_status("A/B?state=1")
+        self.assertTrue(client.get.call_args.args[0].endswith("/order/A%2FB%3Fstate%3D1"))
+
     def test_discovery_and_telemetry(self):
         client, _ = self.make_client()
         client.authenticate()

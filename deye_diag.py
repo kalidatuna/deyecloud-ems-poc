@@ -14,7 +14,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -106,7 +106,7 @@ class DeyeCloudClient:
         if self.company_id:
             payload["companyId"] = self.company_id.strip()
         result = self.post(
-            self._url(f"account/token?appId={self.app_id}"), payload, {}
+            self._url(f"account/token?appId={quote(self.app_id, safe='')}"), payload, {}
         )
         if not result.get("success") or not result.get("accessToken"):
             raise RuntimeError(f"DeyeCloud token request failed: {result.get('msg', result)}")
@@ -203,7 +203,7 @@ class DeyeCloudClient:
         order_id = str(order_id).strip()
         if not order_id:
             raise ValueError("order_id cannot be empty")
-        return self.get(self._url(f"order/{order_id}"), self._auth_headers())
+        return self.get(self._url(f"order/{quote(order_id, safe='')}"), self._auth_headers())
 
     def control(
         self,
