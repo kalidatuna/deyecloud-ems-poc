@@ -1,7 +1,9 @@
+import contextlib
+import io
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from deye_diag import DeyeCloudClient, login_field, sha256_password, station_id, redact
+from deye_diag import DeyeCloudClient, login_field, main, sha256_password, station_id, redact
 
 
 class FakeTransport:
@@ -38,6 +40,18 @@ class FakeTransport:
 
 
 class DeyeDiagTests(unittest.TestCase):
+    @patch.object(DeyeCloudClient, "authenticate")
+    def test_invalid_cli_control_payload_never_authenticates(self, authenticate):
+        credentials = ["--app-id", "app", "--app-secret", "secret", "--login", "alice", "--password", "pw"]
+        for options in (
+            ["--dynamic-control-json", '{"deviceSn":"INV-1"}'],
+            ["--control-path", "station/delete", "--payload-json", '{"deviceSn":"INV-1"}'],
+            ["--control-path", "strategy/dynamicControl", "--payload-json", "not-json"],
+        ):
+            with self.subTest(options=options), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(main(credentials + options), 2)
+        authenticate.assert_not_called()
+
     def make_client(self):
         fake = FakeTransport()
         client = DeyeCloudClient(

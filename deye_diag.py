@@ -266,6 +266,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.payload_json and not args.control_path:
+        print("--payload-json requires --control-path", file=sys.stderr)
+        return 2
+    if args.control_path and not args.payload_json:
+        print("--control-path requires --payload-json", file=sys.stderr)
+        return 2
+    try:
+        control_payload = json.loads(args.payload_json) if args.payload_json else None
+        dynamic_payload = json.loads(args.dynamic_control_json) if args.dynamic_control_json else None
+        if dynamic_payload is not None:
+            DeyeCloudClient.validate_dynamic_payload(dynamic_payload)
+    except (json.JSONDecodeError, ValueError) as exc:
+        print(f"invalid control payload: {exc}", file=sys.stderr)
+        return 2
     missing = [
         name
         for name, value in {
@@ -288,6 +302,12 @@ def main(argv: list[str] | None = None) -> int:
         password=args.password,
         company_id=args.company_id,
     )
+    if control_payload is not None:
+        try:
+            client.control(args.control_path, control_payload)
+        except ValueError as exc:
+            print(f"invalid control request: {exc}", file=sys.stderr)
+            return 2
     client.authenticate()
     stations = client.stations()
     ids = [sid for s in stations if (sid := station_id(s)) is not None]
@@ -304,26 +324,13 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     if args.control_path:
-        if not args.payload_json:
-            print("--control-path requires --payload-json", file=sys.stderr)
-            return 2
-        try:
-            payload = json.loads(args.payload_json)
-        except json.JSONDecodeError as exc:
-            print(f"invalid --payload-json: {exc}", file=sys.stderr)
-            return 2
         report["control"] = client.control(
-            args.control_path, payload, execute=args.execute
+            args.control_path, control_payload, execute=args.execute
         )
 
     if args.dynamic_control_json:
-        try:
-            payload = json.loads(args.dynamic_control_json)
-        except json.JSONDecodeError as exc:
-            print(f"invalid --dynamic-control-json: {exc}", file=sys.stderr)
-            return 2
         report["dynamic_control"] = client.dynamic_control(
-            payload, execute=args.execute
+            dynamic_payload, execute=args.execute
         )
         response = report["dynamic_control"].get("response") or {}
         if args.execute and response.get("orderId"):
