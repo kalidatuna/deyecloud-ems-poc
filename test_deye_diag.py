@@ -52,6 +52,14 @@ class DeyeDiagTests(unittest.TestCase):
                 call()
             self.assertNotIn("private-secret", str(error.exception))
 
+    @patch("deye_diag.urllib.request.urlopen")
+    def test_http_helpers_reject_json_arrays(self, urlopen):
+        urlopen.side_effect = lambda *_args, **_kwargs: io.BytesIO(b"[]")
+        for call in (lambda: http_get_json("https://example.com", {}),
+                     lambda: http_post_json("https://example.com", {}, {})):
+            with self.assertRaisesRegex(RuntimeError, "must be an object"):
+                call()
+
     @patch.object(DeyeCloudClient, "authenticate")
     def test_invalid_cli_control_payload_never_authenticates(self, authenticate):
         credentials = ["--app-id", "app", "--app-secret", "secret", "--login", "alice", "--password", "pw"]

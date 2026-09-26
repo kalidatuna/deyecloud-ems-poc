@@ -48,9 +48,12 @@ def http_post_json(url: str, payload: JsonDict, headers: dict[str, str]) -> Json
         raise RuntimeError(f"network error calling {url}: {exc.reason}") from exc
 
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"non-JSON response from {url}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"JSON response from {url} must be an object")
+    return data
 
 
 def http_get_json(url: str, headers: dict[str, str]) -> JsonDict:
@@ -64,9 +67,12 @@ def http_get_json(url: str, headers: dict[str, str]) -> JsonDict:
         raise RuntimeError(f"network error calling {url}: {exc.reason}") from exc
 
     try:
-        return json.loads(raw)
+        data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"non-JSON response from {url}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"JSON response from {url} must be an object")
+    return data
 
 
 @dataclass
