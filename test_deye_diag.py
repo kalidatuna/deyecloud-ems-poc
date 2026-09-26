@@ -247,6 +247,14 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertEqual(len(client.devices([101], 1)), 1)
         client.post.assert_called_once()
 
+    def test_device_pagination_stops_on_repeated_page(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        client.post = Mock(return_value={"deviceListItems": [{"deviceSn": "A"}]})
+        with self.assertRaisesRegex(RuntimeError, "repeated a page"):
+            client.devices([101], 1)
+        self.assertEqual(client.post.call_count, 2)
+
     def test_invalid_device_pages_are_reported(self):
         for page in ({"deviceListItems": {"deviceSn": "A"}},
                      {"deviceListItems": ["A"]},

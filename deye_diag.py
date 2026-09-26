@@ -133,6 +133,7 @@ class DeyeCloudClient:
             return []
         page = 1
         devices: list[JsonDict] = []
+        seen_pages: set[str] = set()
         while True:
             result = self.post(
                 self._url("station/device"),
@@ -144,6 +145,10 @@ class DeyeCloudClient:
             items = result.get("deviceListItems") or []
             if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
                 raise RuntimeError("device discovery returned an invalid deviceListItems list")
+            fingerprint = json.dumps(items, sort_keys=True)
+            if items and fingerprint in seen_pages:
+                raise RuntimeError("device discovery repeated a page; stopping pagination")
+            seen_pages.add(fingerprint)
             devices.extend(items)
             total = result.get("total")
             if total is None:
