@@ -223,7 +223,10 @@ class DeyeCloudClient:
         order_id = str(order_id).strip()
         if not order_id:
             raise ValueError("order_id cannot be empty")
-        return self.get(self._url(f"order/{quote(order_id, safe='')}"), self._auth_headers())
+        result = self.get(self._url(f"order/{quote(order_id, safe='')}"), self._auth_headers())
+        if result.get("success") is False:
+            raise RuntimeError("order status request failed")
+        return result
 
     def control(
         self,

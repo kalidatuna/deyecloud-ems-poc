@@ -219,6 +219,13 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertEqual(status["status"], "SUCCESS")
         self.assertTrue(fake.calls[-1][1].endswith("/order/ORDER-123"))
 
+    def test_order_status_failure_is_reported(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        client.get = Mock(return_value={"success": False, "msg": "missing order"})
+        with self.assertRaisesRegex(RuntimeError, "order status request failed"):
+            client.order_status("ORDER-123")
+
     def test_dynamic_control_validation(self):
         client, _ = self.make_client()
         with self.assertRaisesRegex(ValueError, "deviceSn"):
