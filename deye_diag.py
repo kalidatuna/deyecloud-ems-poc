@@ -214,6 +214,8 @@ class DeyeCloudClient:
         result = self.post(
             self._url("strategy/dynamicControl"), payload, self._auth_headers()
         )
+        if result.get("success") is False:
+            raise RuntimeError("dynamic control request was rejected by DeyeCloud")
         return {"dry_run": False, "request": preview, "response": result}
 
     def order_status(self, order_id: str) -> JsonDict:
@@ -250,6 +252,8 @@ class DeyeCloudClient:
         if not execute:
             return {"dry_run": True, **preview}
         result = self.post(self._url(path), payload, self._auth_headers())
+        if result.get("success") is False:
+            raise RuntimeError("control request was rejected by DeyeCloud")
         return {"dry_run": False, "request": preview, "response": result}
 
 

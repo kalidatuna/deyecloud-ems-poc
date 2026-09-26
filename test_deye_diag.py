@@ -156,6 +156,16 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertTrue(result["response"]["success"])
         self.assertTrue(fake.calls[-1][1].endswith("/order/sys/tou/update"))
 
+    def test_failed_control_write_is_not_reported_as_success(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        client.post = Mock(return_value={"success": False, "msg": "device rejected"})
+        with self.assertRaisesRegex(RuntimeError, "rejected"):
+            client.control("order/sys/tou/update", {"deviceSn": "INV-1"}, execute=True)
+        payload = {"deviceSn": "INV-1", "workMode": "MODE", "timeUseSettingItems": [{"time": "00:00", "power": 1, "soc": 50}]}
+        with self.assertRaisesRegex(RuntimeError, "rejected"):
+            client.dynamic_control(payload, execute=True)
+
     def test_rejects_non_order_write_path(self):
         client, _ = self.make_client()
         with self.assertRaises(ValueError):
