@@ -293,6 +293,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--poll-order-id", help="Read status for an existing Dynamic Control order ID")
     p.add_argument("--execute", action="store_true", help="Actually send the control write. Default is dry-run.")
+    p.add_argument("--preview-only", action="store_true", help="Validate and show a control request without credentials or network calls")
     return p
 
 
@@ -312,6 +313,22 @@ def main(argv: list[str] | None = None) -> int:
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"invalid control payload: {exc}", file=sys.stderr)
         return 2
+    if args.preview_only:
+        if args.execute or args.poll_order_id or not (args.control_path or args.dynamic_control_json):
+            print("--preview-only requires a control payload and cannot be combined with --execute or --poll-order-id", file=sys.stderr)
+            return 2
+        try:
+            preview_client = DeyeCloudClient(args.base_url, "", "", "", "")
+            preview = {}
+            if args.control_path:
+                preview["control"] = preview_client.control(args.control_path, control_payload)
+            if dynamic_payload is not None:
+                preview["dynamic_control"] = preview_client.dynamic_control(dynamic_payload)
+        except ValueError as exc:
+            print(f"invalid control request: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(redact(preview), indent=2, ensure_ascii=False))
+        return 0
     missing = [
         name
         for name, value in {

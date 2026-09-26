@@ -46,7 +46,10 @@ Equivalent command-line options are listed by `--help`. Prefer environment varia
 python3 deye_diag.py --dynamic-control-json '{"deviceSn":"REPLACE_WITH_DEVICE_SN","workMode":"ZERO_EXPORT_TO_CT","timeUseSettingItems":[{"time":"00:00","power":1000,"soc":80}]}'
 ```
 
-This illustrates the minimum shape accepted by the local validator, **not a recommended inverter configuration**. Validation checks required fields, not every API constraint or electrical operating limit. The CLI still authenticates and reads diagnostics before producing the preview; dry-run means no control write, not no network calls.
+Add `--preview-only` to validate and print that payload without credentials or
+network requests. It cannot be combined with `--execute` or order polling.
+
+This illustrates the minimum shape accepted by the local validator, **not a recommended inverter configuration**. Validation checks required fields, not every API constraint or electrical operating limit. Without `--preview-only`, the CLI authenticates and reads diagnostics before producing the preview; dry-run means no control write, not no network calls.
 
 Control writes require `--execute`. Use it only with a reviewed payload for the intended device. The generic `--control-path` / `--payload-json` route accepts only the three paths allowlisted in `DeyeCloudClient.control()`.
 

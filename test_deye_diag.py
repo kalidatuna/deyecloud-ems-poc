@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import unittest
 import urllib.error
 from unittest.mock import Mock, patch
@@ -71,6 +72,19 @@ class DeyeDiagTests(unittest.TestCase):
             with self.subTest(options=options), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(main(credentials + options), 2)
         authenticate.assert_not_called()
+
+    @patch.object(DeyeCloudClient, "authenticate")
+    def test_preview_only_needs_no_credentials_or_network(self, authenticate):
+        output = io.StringIO()
+        payload = '{"deviceSn":"INV-1","workMode":"MODE","timeUseSettingItems":[{"time":"00:00","power":1,"soc":50}]}'
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(["--preview-only", "--dynamic-control-json", payload]), 0)
+        self.assertTrue(json.loads(output.getvalue())["dynamic_control"]["dry_run"])
+        authenticate.assert_not_called()
+
+    def test_preview_only_rejects_execute(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(["--preview-only", "--execute", "--control-path", "strategy/dynamicControl", "--payload-json", "{}"]), 2)
 
     def make_client(self):
         fake = FakeTransport()
