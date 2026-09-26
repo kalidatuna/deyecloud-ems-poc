@@ -98,6 +98,13 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertEqual(payload["email"], "buyer@example.com")
         self.assertEqual(payload["password"], sha256_password("pw"))
 
+    def test_auth_failure_does_not_echo_server_message(self):
+        client, _ = self.make_client()
+        client.post = Mock(return_value={"success": False, "msg": "appSecret=private-secret"})
+        with self.assertRaisesRegex(RuntimeError, "token request failed") as error:
+            client.authenticate()
+        self.assertNotIn("private-secret", str(error.exception))
+
     def test_url_components_are_encoded(self):
         client, fake = self.make_client()
         client.app_id = "app&other=1"

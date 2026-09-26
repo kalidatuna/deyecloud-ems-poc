@@ -113,7 +113,7 @@ class DeyeCloudClient:
             self._url(f"account/token?appId={quote(self.app_id, safe='')}"), payload, {}
         )
         if not result.get("success") or not result.get("accessToken"):
-            raise RuntimeError(f"DeyeCloud token request failed: {result.get('msg', result)}")
+            raise RuntimeError("DeyeCloud token request failed; check credentials and API region")
         self.token = str(result["accessToken"])
         return self.token
 
