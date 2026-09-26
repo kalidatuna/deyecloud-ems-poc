@@ -124,6 +124,15 @@ class DeyeDiagTests(unittest.TestCase):
         self.assertEqual(devices[0]["deviceSn"], "INV-1")
         self.assertEqual(latest["batterySOC"], 80)
 
+    def test_invalid_station_list_is_reported_before_device_calls(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        for stations in ({"id": 101}, ["station-101"]):
+            with self.subTest(stations=stations):
+                client.post = Mock(return_value={"stationList": stations})
+                with self.assertRaisesRegex(RuntimeError, "invalid stationList"):
+                    client.stations()
+
     def test_control_is_dry_run_by_default(self):
         client, fake = self.make_client()
         client.authenticate()

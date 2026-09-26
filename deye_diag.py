@@ -121,7 +121,10 @@ class DeyeCloudClient:
         result = self.post(self._url("station/list"), {}, self._auth_headers())
         if result.get("success") is False:
             raise RuntimeError(f"station list failed: {result.get('msg', result)}")
-        return list(result.get("stationList") or [])
+        stations = result.get("stationList") or []
+        if not isinstance(stations, list) or any(not isinstance(item, dict) for item in stations):
+            raise RuntimeError("station list returned an invalid stationList list")
+        return stations
 
     def devices(self, station_ids: list[Any], page_size: int = 100) -> list[JsonDict]:
         if isinstance(page_size, bool) or not isinstance(page_size, int) or page_size < 1:
