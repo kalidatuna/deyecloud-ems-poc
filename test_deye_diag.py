@@ -68,6 +68,9 @@ class DeyeDiagTests(unittest.TestCase):
             ["--dynamic-control-json", '{"deviceSn":"INV-1"}'],
             ["--control-path", "station/delete", "--payload-json", '{"deviceSn":"INV-1"}'],
             ["--control-path", "strategy/dynamicControl", "--payload-json", "not-json"],
+            ["--control-path", "strategy/dynamicControl", "--payload-json", "null", "--execute"],
+            ["--control-path", "strategy/dynamicControl", "--payload-json", '{"deviceSn":"INV-1"}', "--execute"],
+            ["--dynamic-control-json", "null", "--execute"],
         ):
             with self.subTest(options=options), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(main(credentials + options), 2)
@@ -244,6 +247,16 @@ class DeyeDiagTests(unittest.TestCase):
         client, _ = self.make_client()
         with self.assertRaisesRegex(ValueError, "deviceSn"):
             client.dynamic_control({"workMode": "ZERO_EXPORT_TO_CT", "timeUseSettingItems": [{}]})
+
+    def test_generic_dynamic_route_validates_before_preview_or_write(self):
+        client, fake = self.make_client()
+        for execute in (False, True):
+            with self.subTest(execute=execute), self.assertRaisesRegex(ValueError, "workMode"):
+                client.control("/strategy/dynamicControl", {"deviceSn": "INV-1"}, execute=execute)
+        self.assertEqual(fake.calls, [])
+        payload = {"deviceSn": "INV-1", "workMode": "MODE",
+                   "timeUseSettingItems": [{"time": "00:00", "power": 1, "soc": 50}]}
+        self.assertTrue(client.control("strategy/dynamicControl", payload)["dry_run"])
 
     def test_invalid_page_size_rejected_before_transport(self):
         client, fake = self.make_client()
