@@ -31,6 +31,8 @@ python3 deye_diag.py
 
 The CLI authenticates, discovers stations and devices, and fetches station telemetry. It writes a JSON report to stdout. Known credential fields are redacted recursively, but device serial numbers, station IDs, and telemetry remain in the report; review it before sharing.
 
+Invalid options or payloads exit with status 2. Diagnostic failures exit with status 1 and a concise message on stderr; successful reports exit with status 0. Rejected API reads do not print the server response body.
+
 | Environment variable | Purpose |
 | --- | --- |
 | `DEYE_APP_ID`, `DEYE_APP_SECRET` | Application credentials; required |

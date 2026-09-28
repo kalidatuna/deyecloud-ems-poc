@@ -122,6 +122,36 @@ class DeyeDiagTests(unittest.TestCase):
             client.authenticate()
         self.assertNotIn("private-secret", str(error.exception))
 
+    @patch.object(DeyeCloudClient, "authenticate")
+    def test_cli_reports_diagnostic_failures_without_tracebacks(self, authenticate):
+        credentials = ["--app-id", "app", "--app-secret", "secret", "--login", "alice", "--password", "pw"]
+        for error in (RuntimeError("token request failed"), TimeoutError("request timed out")):
+            output, errors = io.StringIO(), io.StringIO()
+            authenticate.side_effect = error
+            with self.subTest(error=error), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+                self.assertEqual(main(credentials), 1)
+                self.assertEqual(output.getvalue(), "")
+                self.assertIn("diagnostic failed", errors.getvalue())
+                self.assertNotIn("Traceback", errors.getvalue())
+
+    @patch.object(DeyeCloudClient, "authenticate")
+    def test_cli_invalid_base_url_does_not_authenticate(self, authenticate):
+        credentials = ["--app-id", "app", "--app-secret", "secret", "--login", "alice", "--password", "pw"]
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(main(credentials + ["--base-url", "http://example.com"]), 1)
+        self.assertIn("HTTPS", errors.getvalue())
+        authenticate.assert_not_called()
+
+    def test_read_failures_do_not_echo_server_payloads(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        client.post = Mock(return_value={"success": False, "msg": "password=private-secret"})
+        for call in (client.stations, lambda: client.devices([101]),
+                     lambda: client.station_latest(101), lambda: client.tou_config("INV-1")):
+            with self.subTest(call=call), self.assertRaises(RuntimeError) as error:
+                call()
+            self.assertNotIn("private-secret", str(error.exception))
+
     def test_url_components_are_encoded(self):
         client, fake = self.make_client()
         client.app_id = "app&other=1"
