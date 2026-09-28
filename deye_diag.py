@@ -251,6 +251,8 @@ class DeyeCloudClient:
             raise ValueError(f"control path is not in the reviewed allowlist: {path}")
         if not isinstance(payload, dict) or not payload:
             raise ValueError("control payload must be a non-empty JSON object")
+        if path == "strategy/dynamicControl":
+            self.validate_dynamic_payload(payload)
         preview = {"path": path, "payload": payload, "execute": execute}
         if not execute:
             return {"dry_run": True, **preview}
@@ -308,8 +310,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         control_payload = json.loads(args.payload_json) if args.payload_json else None
         dynamic_payload = json.loads(args.dynamic_control_json) if args.dynamic_control_json else None
-        if dynamic_payload is not None:
+        if args.dynamic_control_json is not None:
             DeyeCloudClient.validate_dynamic_payload(dynamic_payload)
+        if args.payload_json is not None and (not isinstance(control_payload, dict) or not control_payload):
+            raise ValueError("control payload must be a non-empty JSON object")
     except (json.JSONDecodeError, ValueError) as exc:
         print(f"invalid control payload: {exc}", file=sys.stderr)
         return 2
