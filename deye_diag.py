@@ -120,7 +120,7 @@ class DeyeCloudClient:
     def stations(self) -> list[JsonDict]:
         result = self.post(self._url("station/list"), {}, self._auth_headers())
         if result.get("success") is False:
-            raise RuntimeError(f"station list failed: {result.get('msg', result)}")
+            raise RuntimeError("station list request failed")
         stations = result.get("stationList")
         if stations is None:
             stations = []
@@ -143,7 +143,7 @@ class DeyeCloudClient:
                 self._auth_headers(),
             )
             if result.get("success") is False:
-                raise RuntimeError(f"device discovery failed: {result.get('msg', result)}")
+                raise RuntimeError("device discovery request failed")
             items = result.get("deviceListItems")
             if items is None:
                 items = []
@@ -169,7 +169,7 @@ class DeyeCloudClient:
             self._url("station/latest"), {"stationId": station_id}, self._auth_headers()
         )
         if result.get("success") is False:
-            raise RuntimeError(f"station telemetry failed: {result.get('msg', result)}")
+            raise RuntimeError("station telemetry request failed")
         return result
 
     def tou_config(self, device_sn: str) -> JsonDict:
@@ -179,7 +179,7 @@ class DeyeCloudClient:
             self._auth_headers(),
         )
         if result.get("success") is False:
-            raise RuntimeError(f"TOU config read failed: {result.get('msg', result)}")
+            raise RuntimeError("TOU config read request failed")
         return result
 
     @staticmethod
@@ -351,6 +351,14 @@ def main(argv: list[str] | None = None) -> int:
         print("Missing required credentials: " + ", ".join(missing), file=sys.stderr)
         return 2
 
+    try:
+        return run_diagnostics(args, control_payload, dynamic_payload)
+    except (RuntimeError, ValueError, OSError) as exc:
+        print(f"diagnostic failed: {exc}", file=sys.stderr)
+        return 1
+
+
+def run_diagnostics(args, control_payload, dynamic_payload) -> int:
     client = DeyeCloudClient(
         base_url=args.base_url,
         app_id=args.app_id,
