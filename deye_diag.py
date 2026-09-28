@@ -121,7 +121,9 @@ class DeyeCloudClient:
         result = self.post(self._url("station/list"), {}, self._auth_headers())
         if result.get("success") is False:
             raise RuntimeError(f"station list failed: {result.get('msg', result)}")
-        stations = result.get("stationList") or []
+        stations = result.get("stationList")
+        if stations is None:
+            stations = []
         if not isinstance(stations, list) or any(not isinstance(item, dict) for item in stations):
             raise RuntimeError("station list returned an invalid stationList list")
         return stations
@@ -142,7 +144,9 @@ class DeyeCloudClient:
             )
             if result.get("success") is False:
                 raise RuntimeError(f"device discovery failed: {result.get('msg', result)}")
-            items = result.get("deviceListItems") or []
+            items = result.get("deviceListItems")
+            if items is None:
+                items = []
             if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
                 raise RuntimeError("device discovery returned an invalid deviceListItems list")
             fingerprint = json.dumps(items, sort_keys=True)

@@ -144,7 +144,7 @@ class DeyeDiagTests(unittest.TestCase):
     def test_invalid_station_list_is_reported_before_device_calls(self):
         client, _ = self.make_client()
         client.token = "test-token"
-        for stations in ({"id": 101}, ["station-101"]):
+        for stations in ({"id": 101}, ["station-101"], {}, "", False, 0):
             with self.subTest(stations=stations):
                 client.post = Mock(return_value={"stationList": stations})
                 with self.assertRaisesRegex(RuntimeError, "invalid stationList"):
@@ -301,6 +301,8 @@ class DeyeDiagTests(unittest.TestCase):
 
     def test_invalid_device_pages_are_reported(self):
         for page in ({"deviceListItems": {"deviceSn": "A"}},
+                     {"deviceListItems": {}}, {"deviceListItems": ""},
+                     {"deviceListItems": False}, {"deviceListItems": 0},
                      {"deviceListItems": ["A"]},
                      {"deviceListItems": [{"deviceSn": "A"}], "total": "unknown"}):
             with self.subTest(page=page):
@@ -309,6 +311,16 @@ class DeyeDiagTests(unittest.TestCase):
                 client.post = Mock(return_value=page)
                 with self.assertRaisesRegex(RuntimeError, "invalid"):
                     client.devices([101], 1)
+
+    def test_missing_null_and_empty_discovery_lists_remain_supported(self):
+        client, _ = self.make_client()
+        client.token = "test-token"
+        for result in ({}, {"stationList": None, "deviceListItems": None},
+                       {"stationList": [], "deviceListItems": []}):
+            with self.subTest(result=result):
+                client.post = Mock(return_value=result)
+                self.assertEqual(client.stations(), [])
+                self.assertEqual(client.devices([101]), [])
 
     def test_station_id_preserves_zero_and_falls_back_for_none(self):
         self.assertEqual(station_id({"id": 0, "stationId": 101}), 0)
